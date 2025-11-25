@@ -1,0 +1,295 @@
+<!DOCTYPE html>
+<html lang="uz">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Professional Mini YouTube Player</title>
+<style>
+  body {
+    font-family: 'Arial', sans-serif;
+    margin: 0;
+    overflow: hidden;
+    background: linear-gradient(45deg, #ff6a00, #ee0979);
+    background-size: 400% 400%;
+    animation: gradientBG 15s ease infinite;
+    color: #fff;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    min-height: 100vh;
+  }
+  @keyframes gradientBG {
+    0% {background-position: 0% 50%;}
+    50% {background-position: 100% 50%;}
+    100% {background-position: 0% 50%;}
+  }
+  header {
+    width: 100%;
+    padding: 20px;
+    background: rgba(0,0,0,0.5);
+    text-align: center;
+    font-size: 24px;
+    font-weight: bold;
+    box-shadow: 0 5px 15px rgba(0,0,0,0.5);
+  }
+  .search-container {
+    margin: 20px 0;
+    display: flex;
+    justify-content: center;
+    flex-wrap: wrap;
+    gap: 10px;
+  }
+  .search-container input {
+    padding: 10px;
+    width: 80%;
+    max-width: 300px;
+    border-radius: 5px;
+    border: none;
+    font-size: 16px;
+  }
+  .search-container button {
+    padding: 10px 15px;
+    border: none;
+    border-radius: 5px;
+    background: #FF0000;
+    color: #fff;
+    font-weight: bold;
+    cursor: pointer;
+    transition: 0.3s;
+  }
+  .search-container button:hover {
+    background: #CC0000;
+  }
+  .controls {
+    margin-top: 15px;
+    display: flex;
+    gap: 15px;
+    flex-wrap: wrap;
+    justify-content: center;
+    align-items: center;
+  }
+  .controls button {
+    padding: 10px 15px;
+    border: none;
+    border-radius: 50%;
+    background: #FF0000;
+    cursor: pointer;
+    font-size: 18px;
+    transition: 0.3s;
+  }
+  .controls button:hover {
+    background: #CC0000;
+  }
+  #progress-container {
+    width: 90%;
+    max-width: 560px;
+    height: 10px;
+    background: rgba(255,255,255,0.3);
+    border-radius: 5px;
+    margin-top: 10px;
+    cursor: pointer;
+    position: relative;
+  }
+  #progress {
+    height: 100%;
+    background: #FF0000;
+    width: 0%;
+    border-radius: 5px;
+  }
+  #time {
+    margin-top: 5px;
+    font-size: 14px;
+  }
+  #player-container {
+    margin-top: 20px;
+    width: 90%;
+    max-width: 560px;
+    aspect-ratio: 16/9;
+    box-shadow: 0 10px 25px rgba(0,0,0,0.5);
+    border-radius: 10px;
+    overflow: hidden;
+    position: relative;
+  }
+  #animation {
+    position: absolute;
+    top: 10px;
+    right: 10px;
+    width: 60px;
+    height: 60px;
+    border-radius: 50%;
+    background: url('https://i.gifer.com/YCZH.gif') no-repeat center;
+    background-size: cover;
+    animation: spin 5s linear infinite;
+    z-index: 2;
+  }
+  canvas {
+    position: absolute;
+    top: 0;
+    left: 0;
+    z-index: 1;
+    pointer-events: none;
+  }
+  @keyframes spin {
+    0% { transform: rotate(0deg);}
+    100% { transform: rotate(360deg);}
+  }
+</style>
+</head>
+<body>
+
+<header> Music Player</header>
+
+<div class="search-container">
+  <input type="text" id="songInput" placeholder="Qushiq nomini yozing...">
+  <button onclick="searchSong()">Qidirish</button>
+</div>
+
+<div class="controls">
+  <button onclick="prevSong()">⬅️</button>
+  <button onclick="playPause()">⏯️</button>
+  <button onclick="nextSong()">➡️</button>
+</div>
+
+<div id="progress-container" onclick="seek(event)">
+  <div id="progress"></div>
+</div>
+<div id="time">0:00 / 0:00</div>
+
+<div id="player-container">
+  <div id="player"></div>
+  <div id="animation"></div>
+  <canvas id="particleCanvas"></canvas>
+</div>
+
+<script>
+let player;
+let playlist = [];
+let currentIndex = 0;
+
+// YouTube IFrame API
+let tag = document.createElement('script');
+tag.src = "https://www.youtube.com/iframe_api";
+document.body.appendChild(tag);
+
+function onYouTubeIframeAPIReady() {
+  player = new YT.Player('player', {
+    width: '100%',
+    height: '100%',
+    videoId: '',
+    playerVars: { 'autoplay': 0, 'controls': 0 },
+    events: {'onReady': onPlayerReady, 'onStateChange': onPlayerStateChange}
+  });
+}
+
+function onPlayerReady(event) {
+  updateProgress();
+}
+
+function onPlayerStateChange(event) {
+  updateProgress();
+}
+
+// Qidiruv: qisqa so‘z bilan ham topish
+async function searchSong() {
+  let query = document.getElementById('songInput').value.trim();
+  if(!query) return alert("Qushiq nomini yozing!");
+  const API_KEY = "YOUR_YOUTUBE_API_KEY"; // O'z API kalitingiz
+  let response = await fetch(`https://www.googleapis.com/youtube/v3/search?part=snippet&type=video&q=${encodeURIComponent(query)}&key=${API_KEY}&maxResults=10`);
+  let data = await response.json();
+  if(data.items && data.items.length > 0){
+    playlist = data.items
+      .filter(item => item.snippet.title.toLowerCase().includes(query.toLowerCase()))
+      .map(item => item.id.videoId);
+    if(playlist.length === 0){
+      alert("Qushiq topilmadi!");
+      return;
+    }
+    currentIndex = 0;
+    loadSong(currentIndex);
+  } else {
+    alert("Qushiq topilmadi!");
+  }
+}
+
+function loadSong(index){
+  if(playlist.length === 0) return;
+  player.loadVideoById(playlist[index]);
+}
+
+function playPause() {
+  if(player && player.getPlayerState() === YT.PlayerState.PLAYING) player.pauseVideo();
+  else player.playVideo();
+}
+
+function nextSong() {
+  if(playlist.length === 0) return;
+  currentIndex = (currentIndex + 1) % playlist.length;
+  loadSong(currentIndex);
+}
+
+function prevSong() {
+  if(playlist.length === 0) return;
+  currentIndex = (currentIndex - 1 + playlist.length) % playlist.length;
+  loadSong(currentIndex);
+}
+
+// Progress bar
+function updateProgress(){
+  if(player && player.getCurrentTime){
+    const duration = player.getDuration();
+    const current = player.getCurrentTime();
+    document.getElementById('progress').style.width = (current/duration*100) + "%";
+    document.getElementById('time').textContent = formatTime(current) + " / " + formatTime(duration);
+    requestAnimationFrame(updateProgress);
+  }
+}
+
+function formatTime(seconds){
+  seconds = Math.floor(seconds);
+  let min = Math.floor(seconds/60);
+  let sec = seconds%60;
+  if(sec<10) sec="0"+sec;
+  return min+":"+sec;
+}
+
+function seek(e){
+  if(player && player.getDuration){
+    const rect = e.target.getBoundingClientRect();
+    const percent = (e.clientX - rect.left)/rect.width;
+    player.seekTo(percent*player.getDuration(), true);
+  }
+}
+
+// Partikl effekti
+const canvas = document.getElementById('particleCanvas');
+const ctx = canvas.getContext('2d');
+function resizeCanvas(){
+  canvas.width = document.getElementById('player-container').clientWidth;
+  canvas.height = document.getElementById('player-container').clientHeight;
+}
+window.addEventListener('resize', resizeCanvas);
+resizeCanvas();
+
+const particles = [];
+for(let i=0;i<50;i++){
+  particles.push({x:Math.random()*canvas.width,y:Math.random()*canvas.height,r:Math.random()*3+1,dx:(Math.random()-0.5)*1.5,dy:(Math.random()-0.5)*1.5});
+}
+
+function animateParticles(){
+  ctx.clearRect(0,0,canvas.width,canvas.height);
+  particles.forEach(p=>{
+    ctx.beginPath();
+    ctx.arc(p.x,p.y,p.r,0,Math.PI*2);
+    ctx.fillStyle="rgba(255,255,255,0.8)";
+    ctx.fill();
+    p.x+=p.dx;p.y+=p.dy;
+    if(p.x<0||p.x>canvas.width)p.dx*=-1;
+    if(p.y<0||p.y>canvas.height)p.dy*=-1;
+  });
+  requestAnimationFrame(animateParticles);
+}
+animateParticles();
+</script>
+
+</body>
+</html>
